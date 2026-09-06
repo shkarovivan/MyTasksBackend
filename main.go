@@ -15,6 +15,8 @@ type config struct {
 	llmBaseURL     string
 	defaultModel   string
 	llmTimeout     time.Duration
+	googleClientID string
+	acceptDevAuth  bool
 }
 
 func getEnv(key, fallback string) string {
@@ -44,6 +46,11 @@ func loadConfig() config {
 	if cfg.providerAPIKey == "" {
 		log.Fatal("PROVIDER_API_KEY is required (LLM provider key, lives only on the backend)")
 	}
+	cfg.googleClientID = os.Getenv("GOOGLE_CLIENT_ID")
+	cfg.acceptDevAuth = getEnv("ACCEPT_DEV_TOKENS", "") == "1"
+	if cfg.googleClientID == "" && !cfg.acceptDevAuth {
+		log.Fatal("GOOGLE_CLIENT_ID is required (web OAuth client ID, aud of Google ID-tokens)")
+	}
 	return cfg
 }
 
@@ -55,6 +62,9 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.Handle("/v1/task", apiKeyMiddleware(postOnly(srv.handleTask), cfg.appAPIKey))
 	mux.Handle("/v1/search", apiKeyMiddleware(postOnly(srv.handleSearch), cfg.appAPIKey))
+
+	googleAuth := newGoogleAuth(cfg.googleClientID, cfg.acceptDevAuth)
+	mux.Handle("/v1/auth/whoami", bearerAuthMiddleware(http.HandlerFunc(handleWhoami), googleAuth))
 
 	server := &http.Server{
 		Addr:         ":" + cfg.port,
