@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // upstreamError is a non-2xx provider response; its body is passed through
@@ -23,12 +25,14 @@ func (e *upstreamError) Error() string {
 type server struct {
 	cfg    config
 	client *http.Client
+	db     *pgxpool.Pool
 }
 
-func newServer(cfg config) *server {
+func newServer(cfg config, db *pgxpool.Pool) *server {
 	return &server{
 		cfg:    cfg,
 		client: &http.Client{Timeout: cfg.llmTimeout},
+		db:     db,
 	}
 }
 

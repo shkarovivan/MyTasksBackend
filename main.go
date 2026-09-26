@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ type config struct {
 	llmTimeout     time.Duration
 	googleClientID string
 	acceptDevAuth  bool
+	dbURL          string
 }
 
 func getEnv(key, fallback string) string {
@@ -51,12 +53,24 @@ func loadConfig() config {
 	if cfg.googleClientID == "" && !cfg.acceptDevAuth {
 		log.Fatal("GOOGLE_CLIENT_ID is required (web OAuth client ID, aud of Google ID-tokens)")
 	}
+	cfg.dbURL = os.Getenv("DATABASE_URL")
+	if cfg.dbURL == "" {
+		log.Fatal("DATABASE_URL is required (postgres://...; provided by docker compose)")
+	}
 	return cfg
 }
 
 func main() {
 	cfg := loadConfig()
-	srv := newServer(cfg)
+
+	db, err := connectDB(context.Background(), cfg.dbURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	log.Printf("database connected")
+
+	srv := newServer(cfg, db)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -65,6 +79,8 @@ func main() {
 
 	googleAuth := newGoogleAuth(cfg.googleClientID, cfg.acceptDevAuth)
 	mux.Handle("/v1/auth/whoami", bearerAuthMiddleware(http.HandlerFunc(handleWhoami), googleAuth))
+	mux.Handle("/v1/sync/push", bearerAuthMiddleware(postOnly(srv.handleSyncPush), googleAuth))
+	mux.Handle("/v1/sync/pull", bearerAuthMiddleware(http.HandlerFunc(srv.handleSyncPull), googleAuth))
 
 	server := &http.Server{
 		Addr:         ":" + cfg.port,
