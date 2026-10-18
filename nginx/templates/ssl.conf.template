@@ -1,20 +1,7 @@
-# nginx virtual host for the task backend, rendered by the official image's
-# envsubst (NGINX_ENVSUBST_FILTER=DOMAIN keeps nginx's own $vars intact).
-# Port 80 serves ACME challenges and redirects everything else to https;
-# port 443 terminates TLS and proxies to the Go backend.
-
-server {
-    listen 80;
-    server_name ${DOMAIN};
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
+# HTTPS vhost: TLS termination + proxy to the Go backend.
+# Enabled by the nginx service command only after the Let's Encrypt
+# certificate exists (chicken-and-egg: nginx cannot start an ssl server
+# without a certificate file).
 
 server {
     listen 443 ssl;
