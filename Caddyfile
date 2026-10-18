@@ -1,0 +1,8 @@
+# TLS termination for the task backend.
+# The hostname comes from the DOMAIN env var (docker-compose -> .env);
+# certificates are issued and renewed automatically via Let's Encrypt
+# using the TLS-ALPN challenge on port 443 — no port 80 needed
+# (the ISP blocks inbound 80).
+{$DOMAIN} {
+	reverse_proxy backend:8080
+}

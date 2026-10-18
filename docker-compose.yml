@@ -24,60 +24,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # TLS termination. The command renders the configs with sed (no envsubst
-  # dependency) and self-bootstraps: until the certificate exists only the
-  # ACME/redirect vhost is enabled; the TLS vhost turns on automatically
-  # within ~30s after certbot succeeds.
-  nginx:
-    image: nginx:1.29-alpine
+  # TLS termination: https://DOMAIN -> backend:8080. Certificates are
+  # obtained via the TLS-ALPN challenge on port 443 (the ISP blocks
+  # inbound 80, so HTTP-01 is not an option).
+  caddy:
+    image: caddy:2-alpine
     environment:
       DOMAIN: ${DOMAIN}
     ports:
       - "443:443"
-      - "8081:80"
     volumes:
-      - ./nginx/templates:/etc/nginx/templates:ro
-      - certbot_www:/var/www/certbot
-      - certbot_certs:/etc/letsencrypt
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - backend
     restart: unless-stopped
-    command: >
-      /bin/sh -c
-      'render() {
-      sed "s/\$${DOMAIN}/$$DOMAIN/g" /etc/nginx/templates/http.conf.template > /etc/nginx/conf.d/http.conf;
-      if [ -e /etc/letsencrypt/live/$$DOMAIN/fullchain.pem ];
-      then sed "s/\$${DOMAIN}/$$DOMAIN/g" /etc/nginx/templates/ssl.conf.template > /etc/nginx/conf.d/ssl.conf;
-      else : > /etc/nginx/conf.d/ssl.conf;
-      fi;
-      };
-      render;
-      nginx -g "daemon off;" &
-      while :; do sleep 30; render; nginx -s reload; done'
-
-  certbot:
-    image: certbot/certbot
-    environment:
-      DOMAIN: ${DOMAIN}
-      CERTBOT_EMAIL: ${CERTBOT_EMAIL}
-    volumes:
-      - certbot_www:/var/www/certbot
-      - certbot_certs:/etc/letsencrypt
-    restart: unless-stopped
-    # Retry every 2 minutes until the first certificate lands (nginx needs a
-    # moment to start serving the ACME path), then renew on the usual 12h cycle.
-    entrypoint: >
-      /bin/sh -c
-      'trap exit TERM;
-      sleep 30;
-      while :; do
-      if certbot certonly --webroot -w /var/www/certbot
-      -d $$DOMAIN --email $$CERTBOT_EMAIL
-      --agree-tos --non-interactive --keep-until-expiring;
-      then sleep 12h; else echo "certbot failed, retrying in 2m"; sleep 2m; fi;
-      done'
 
 volumes:
   pgdata:
-  certbot_www:
-  certbot_certs:
+  caddy_data:
+  caddy_config:
