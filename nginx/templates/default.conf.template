@@ -1,0 +1,37 @@
+# nginx virtual host for the task backend, rendered by the official image's
+# envsubst (NGINX_ENVSUBST_FILTER=DOMAIN keeps nginx's own $vars intact).
+# Port 80 serves ACME challenges and redirects everything else to https;
+# port 443 terminates TLS and proxies to the Go backend.
+
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    location / {
+        proxy_pass http://backend:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # The task AI endpoint can take as long as the LLM does.
+        proxy_read_timeout 180s;
+    }
+}

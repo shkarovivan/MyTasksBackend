@@ -24,5 +24,61 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # TLS termination. Bootstrap certificate flow (see CLAUDE.md):
+  #   docker compose up -d nginx          # placeholder self-signed cert
+  #   docker compose run --rm certbot     # obtain the real certificate
+  #   docker compose restart nginx        # load it
+  # Afterwards both loops keep it renewed automatically.
+  nginx:
+    image: nginx:1.29-alpine
+    environment:
+      DOMAIN: ${DOMAIN}
+      NGINX_ENVSUBST_FILTER: DOMAIN
+    ports:
+      - "443:443"
+      - "8081:80"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    depends_on:
+      - backend
+    restart: unless-stopped
+    # Placeholder self-signed cert lets nginx start before certbot ran;
+    # the periodic reload picks up the real certificate once issued.
+    command: >
+      /bin/sh -c
+      'if [ ! -e /etc/letsencrypt/live/$$DOMAIN/fullchain.pem ];
+      then mkdir -p /etc/letsencrypt/live/$$DOMAIN;
+      openssl req -x509 -nodes -newkey rsa:2048 -days 1
+      -keyout /etc/letsencrypt/live/$$DOMAIN/privkey.pem
+      -out /etc/letsencrypt/live/$$DOMAIN/fullchain.pem
+      -subj "/CN=bootstrap";
+      fi;
+      nginx -g "daemon off;"
+      & while :; do sleep 12h; nginx -s reload; done'
+
+  certbot:
+    image: certbot/certbot
+    environment:
+      DOMAIN: ${DOMAIN}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL}
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -c
+      'trap exit TERM;
+      sleep 30;
+      while :; do
+      certbot certonly --webroot -w /var/www/certbot
+      -d $$DOMAIN --email $$CERTBOT_EMAIL
+      --agree-tos --non-interactive --keep-until-expiring;
+      sleep 12h;
+      done'
+
 volumes:
   pgdata:
+  certbot_www:
+  certbot_certs:
