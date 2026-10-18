@@ -25,14 +25,16 @@ services:
     restart: unless-stopped
 
   # TLS termination: https://DOMAIN -> backend:8080. Certificates are
-  # obtained via the TLS-ALPN challenge on port 443 (the ISP blocks
-  # inbound 80, so HTTP-01 is not an option).
+  # obtained via the TLS-ALPN challenge on port 443 of the container.
+  # Published on host port 8443 because the router mis-NATs port-forward
+  # rules with symmetric ports (443->443 loses return traffic); the
+  # "external 443 -> internal 8443" rewrite works reliably.
   caddy:
     image: caddy:2-alpine
     environment:
       DOMAIN: ${DOMAIN}
     ports:
-      - "443:443"
+      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
