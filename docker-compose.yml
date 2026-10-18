@@ -25,17 +25,18 @@ services:
     restart: unless-stopped
 
   # TLS termination: https://DOMAIN -> backend:8080. Certificates are
-  # obtained via the TLS-ALPN challenge on port 443.
-  # NOTE: if the router refuses to forward 443->443, revert to publishing
-  # on host port 8443 and forwarding external 443 -> internal 8443
-  # (the workaround that worked before; router rules must be created
-  # fresh, edits silently fail to apply).
+  # obtained via the TLS-ALPN challenge on port 443 of the container.
+  # Published on host port 8443: this router provably cannot forward
+  # external 443 -> internal 443 (freshly created symmetric rule drops
+  # all traffic — verified via check-host.net), while the asymmetric
+  # "external 443 -> internal 8443" works. Router rules must be created
+  # fresh: edits silently fail to apply.
   caddy:
     image: caddy:2-alpine
     environment:
       DOMAIN: ${DOMAIN}
     ports:
-      - "443:443"
+      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
